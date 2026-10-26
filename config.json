@@ -1,0 +1,19 @@
+{
+    "name": "订阅负载均衡",
+    "code": "subscribe_lb",
+    "version": "1.0.0",
+    "description": "把多台节点合成订阅里的一个节点，按「用户 + 组」分配其中一台并直接下发它的完整配置（可用 IP，各成员端口/协议可不同）；带健康巡检、fail-open、域名入口自动解析和管理控制台。",
+    "author": "subscribe_lb contributors",
+    "type": "feature",
+    "require": {
+        "xboard": ">=1.0.0"
+    },
+    "config": {
+        "tg_alert": {
+            "type": "boolean",
+            "default": true,
+            "label": "组状态 Telegram 告警",
+            "description": "组持续异常 ≥10 分钟时通知已绑定 Telegram 的管理员（需在系统设置里配置好 Telegram 机器人）"
+        }
+    }
+}

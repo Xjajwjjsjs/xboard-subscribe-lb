@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>订阅负载均衡</title>
+<script>
+// 跟随后台主题：嵌在后台里时直接跟父页面 <html class="dark">，单独打开时读后台同一个 localStorage 键
+(function () {
+  var root = document.documentElement;
+  function dark() {
+    try { if (window.parent !== window) return parent.document.documentElement.classList.contains('dark'); } catch (e) {}
+    var t = null; try { t = localStorage.getItem('vite-ui-theme'); } catch (e) {}
+    t = t || 'light';
+    return t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+  }
+  function apply() { root.classList.toggle('dark', dark()); }
+  apply();
+  window.addEventListener('storage', apply);
+  try { if (window.parent !== window) new MutationObserver(apply).observe(parent.document.documentElement, { attributes: true, attributeFilter: ['class'] }); } catch (e) {}
+})();
+</script>
+<style>
+/* 与 Xboard 后台（shadcn/ui）同一套设计变量 */
+:root{color-scheme:light;--background:0 0% 100%;--foreground:222.2 84% 4.9%;--card:0 0% 100%;--primary:222.2 47.4% 11.2%;--primary-foreground:210 40% 98%;--secondary:210 40% 96.1%;--muted:210 40% 96.1%;--muted-foreground:215.4 16.3% 46.9%;--accent:210 40% 96.1%;--accent-foreground:222.2 47.4% 11.2%;--destructive:0 84.2% 60.2%;--border:214.3 31.8% 91.4%;--input:214.3 31.8% 91.4%;--ring:222.2 84% 4.9%;--radius:.5rem;
+  --ok:142 76% 36%;--warn:32 95% 44%;--bad:0 72% 51%}
+.dark{color-scheme:dark;--background:222.2 84% 4.9%;--foreground:210 40% 98%;--card:222.2 84% 4.9%;--primary:210 40% 98%;--primary-foreground:222.2 47.4% 11.2%;--secondary:217.2 32.6% 17.5%;--muted:217.2 32.6% 17.5%;--muted-foreground:215 20.2% 65.1%;--accent:217.2 32.6% 17.5%;--accent-foreground:210 40% 98%;--destructive:0 62.8% 30.6%;--border:217.2 32.6% 17.5%;--input:217.2 32.6% 17.5%;--ring:212.7 26.8% 83.9%;
+  --ok:142 69% 58%;--warn:43 96% 56%;--bad:0 91% 71%}
+*{box-sizing:border-box;border-color:hsl(var(--border))}
+body{margin:0;background:hsl(var(--background));color:hsl(var(--foreground));font:14px/1.5 ui-sans-serif,system-ui,sans-serif,"Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol","Noto Color Emoji";-webkit-font-smoothing:antialiased}
+header{padding:24px 32px 8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+header h1{font-size:24px;line-height:32px;font-weight:700;letter-spacing:-.025em;margin:0 8px 0 0}
+header .desc{flex-basis:100%;order:9;margin:0;color:hsl(var(--muted-foreground))}
+main{padding:16px 32px 32px}
+@media (max-width:767px){header{padding:16px 16px 4px}main{padding:12px 16px 24px}}
+a{color:inherit}
+#backLink{font-size:13px;text-underline-offset:4px}
+button,select,input,textarea{font:inherit;color:inherit}
+button{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 12px;border-radius:calc(var(--radius) - 2px);border:1px solid hsl(var(--input));background:hsl(var(--background));box-shadow:0 1px 2px 0 rgb(0 0 0/.05);font-size:12px;font-weight:500;white-space:nowrap;cursor:pointer;transition:background-color .15s,color .15s}
+button:hover{background:hsl(var(--accent));color:hsl(var(--accent-foreground))}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:none;box-shadow:0 0 0 1px hsl(var(--ring))}
+button.primary{background:hsl(var(--primary));border-color:hsl(var(--primary));color:hsl(var(--primary-foreground))}
+button.primary:hover{background:hsl(var(--primary)/.9);color:hsl(var(--primary-foreground))}
+button.danger{color:hsl(var(--bad))}
+button.danger:hover{background:hsl(var(--bad)/.1);color:hsl(var(--bad))}
+button:disabled{opacity:.5;pointer-events:none}
+input,select,textarea{height:32px;background:transparent;border:1px solid hsl(var(--input));border-radius:calc(var(--radius) - 2px);padding:0 10px;font-size:13px;box-shadow:0 1px 2px 0 rgb(0 0 0/.05)}
+select{padding-right:6px}
+select option{background:hsl(var(--background));color:hsl(var(--foreground))}
+input::placeholder{color:hsl(var(--muted-foreground))}
+input[type=checkbox]{height:14px;width:14px;padding:0;box-shadow:none;accent-color:hsl(var(--primary));vertical-align:-2px;margin:0 4px 0 0}
+label{white-space:nowrap}
+.card{background:hsl(var(--card));border:1px solid hsl(var(--border));border-radius:var(--radius);margin-bottom:16px;overflow:hidden;box-shadow:0 1px 2px 0 rgb(0 0 0/.05)}
+.card-h{padding:12px 16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;border-bottom:1px solid hsl(var(--border))}
+.card-h .name{font-size:15px;font-weight:600;letter-spacing:-.01em}
+.card-b{padding:12px 16px}
+.muted{color:hsl(var(--muted-foreground))}
+.chip{display:inline-flex;align-items:center;padding:1px 10px;border-radius:calc(var(--radius) - 2px);border:1px solid transparent;background:hsl(var(--secondary));font-size:12px;font-weight:600;line-height:20px;white-space:nowrap}
+.st-ok{background:hsl(var(--ok)/.12);color:hsl(var(--ok))}
+.st-warn{background:hsl(var(--warn)/.14);color:hsl(var(--warn))}
+.st-bad{background:hsl(var(--bad)/.12);color:hsl(var(--bad))}
+.spacer{flex:1}
+.tbl-wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{text-align:left;padding:8px;border-bottom:1px solid hsl(var(--border));vertical-align:top;white-space:nowrap}
+th{height:40px;vertical-align:middle;color:hsl(var(--muted-foreground));font-weight:500}
+tbody tr{transition:background-color .15s}
+tbody tr:hover{background:hsl(var(--muted)/.5)}
+tbody tr:last-child td{border-bottom:0}
+td.wrap{white-space:normal;min-width:220px;max-width:640px;overflow-wrap:anywhere}
+.warns{margin:0;padding:8px 16px 8px 32px;background:hsl(var(--warn)/.08);color:hsl(var(--warn));font-size:13px;border-bottom:1px solid hsl(var(--border))}
+.kv{display:flex;gap:6px 16px;flex-wrap:wrap;font-size:13px}
+.notice{padding:12px 16px;border-radius:var(--radius);border:1px solid hsl(var(--border));background:hsl(var(--background));margin-bottom:16px;font-size:13px}
+.notice ul{margin:8px 0 0;padding-left:18px;color:hsl(var(--muted-foreground))}
+.notice li{margin:2px 0}
+dialog{border:1px solid hsl(var(--border));border-radius:var(--radius);background:hsl(var(--background));color:hsl(var(--foreground));padding:0;width:min(720px,94vw);max-height:90vh;box-shadow:0 10px 15px -3px rgb(0 0 0/.1),0 4px 6px -4px rgb(0 0 0/.1)}
+dialog::backdrop{background:rgb(0 0 0/.6)}
+dialog form{display:flex;flex-direction:column;max-height:88vh}
+.dlg-h{padding:20px 24px 8px;font-size:18px;font-weight:600;letter-spacing:-.025em}
+.dlg-b{padding:12px 24px;overflow:auto;display:grid;grid-template-columns:120px 1fr;gap:12px;align-items:center;font-size:13px}
+.dlg-b>label:not(:has(input)){font-weight:500}
+.dlg-b .full{grid-column:1/-1}
+.dlg-f{padding:12px 24px 20px;display:flex;justify-content:flex-end;gap:8px}
+.dlg-f button{height:36px;padding:0 16px;font-size:13px}
+.picker{border:1px solid hsl(var(--input));border-radius:calc(var(--radius) - 2px);max-height:300px;overflow:auto}
+.picker label{display:flex;gap:8px;padding:6px 10px;border-bottom:1px solid hsl(var(--border));align-items:center;font-size:13px;white-space:normal}
+.picker label:hover{background:hsl(var(--muted)/.5)}
+.picker label.taken{opacity:.45}
+#toast{position:fixed;right:16px;top:16px;z-index:20;max-width:420px;padding:12px 16px;border-radius:var(--radius);border:1px solid hsl(var(--border));background:hsl(var(--background));color:hsl(var(--foreground));box-shadow:0 10px 15px -3px rgb(0 0 0/.1),0 4px 6px -4px rgb(0 0 0/.1);font-size:13px;display:none;white-space:pre-wrap}
+#toast.err{background:hsl(var(--bad)/.08);border-color:hsl(var(--bad)/.3);color:hsl(var(--bad))}
+.ev-level-critical{color:hsl(var(--bad))} .ev-level-warning{color:hsl(var(--warn))}
+details summary{cursor:pointer;font-size:14px}
+.foldable>.fold-h{cursor:pointer;user-select:none}
+.foldable>.fold-h:hover{background:hsl(var(--muted)/.5)}
+.fold{display:inline-block;width:7px;height:7px;margin:0 6px 0 2px;font-size:0;border-right:1.5px solid hsl(var(--muted-foreground));border-bottom:1.5px solid hsl(var(--muted-foreground));transform:rotate(-45deg);transition:transform .15s}
+.foldable.open .fold{transform:rotate(45deg)}
+.foldable:not(.open)>:not(.card-h),.foldable:not(.open) .acts,.foldable.open .brief{display:none}
+.foldable:not(.open)>.card-h{border-bottom:0;padding-top:8px;padding-bottom:8px}
+#groups .foldable:not(.open){margin-bottom:8px}
+.brief{font-size:12px}
+.acts{display:flex;gap:8px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<header>
+  <h1>订阅负载均衡</h1>
+  <p class="desc">每组在订阅里只出现一个节点，按「用户 + 组」分配成员并直接下发入口 IP。</p>
+  <span id="checkChip" class="chip">巡检：—</span>
+  <span class="spacer"></span>
+  <button id="btnFoldAll" title="展开 / 折叠全部组">全部展开</button>
+  <button id="btnReload">刷新</button>
+  <button id="btnNew" class="primary">新建组</button>
+  <a id="backLink" class="muted" href="#">返回后台</a>
+</header>
+<main>
+  <div id="authBox" class="notice" style="display:none"></div>
+  <details class="notice" id="rules">
+    <summary><b>规则说明</b>（分配 / 健康 / 容灾边界）</summary>
+    <ul>
+      <li>每组在订阅里只出现一个节点，名称 = 组的展示名称；连接参数（地址/端口/协议/认证/传输）、倍率、流量计费都来自实际分到的成员。</li>
+      <li>按「用户 + 组」记录分配：首次随机；间隔内复用（不延后到期）；到期后下一次更新订阅时重新随机，允许抽中原节点。同一用户不同客户端/模板一致。</li>
+      <li>成员状态：<b>活跃</b>接收新分配；<b>维护中</b>保留已有分配、不接新分配（没有健康的活跃成员时临时承接）；<b>停用</b>立即失效。成员不会再以自己的名字单独下发（除非勾选「独立显示」）。</li>
+      <li>健康来源：面板心跳（≤<span class="r-hb"></span> 秒）、TCP 探测（连续 <span class="r-down"></span> 轮失败判不可用，连续 <span class="r-up"></span> 轮成功才恢复，巡检停摆 <span class="r-stale"></span> 秒后探测结果作废）、人工/外部强制。自动信号全部判不可用时视为探测侧故障，暂时忽略自动信号（fail-open），只尊重强制下线。</li>
+      <li>不可用 / 停用 / 删除 / 失去用户权限的成员：用户<b>下次更新订阅</b>时提前改分配到其他合格成员。恢复后只承接新分配，不把已迁走的用户拉回。新增成员只承接后续分配，不打乱现有有效分配。</li>
+      <li><b>容灾边界</b>：这是订阅侧重新分配，不是连接中的即时切换——客户端必须再次更新订阅才会生效（Clash 系默认 24 小时自动更新一次）。组停用 = 组和成员都不下发；删除组 = 解散，成员恢复为普通节点。</li>
+    </ul>
+  </details>
+  <div id="groups"></div>
+  <div class="card">
+    <div class="card-h"><span class="name">按用户查分配</span><span class="spacer"></span>
+      <input id="userQ" placeholder="用户 ID 或邮箱" style="width:220px"><button id="btnUser">查询</button></div>
+    <div class="card-b" id="userResult"><span class="muted">查看某个用户在各组的分配记录，以及他现在更新订阅会拿到哪个成员（只读，不改分配）。</span></div>
+  </div>
+  <div class="card foldable" id="evCard">
+    <div class="card-h fold-h"><span class="fold">▶</span><span class="name">最近事件</span><span id="evBrief" class="muted" style="font-size:12px"></span><span class="spacer"></span>
+      <label class="muted"><input type="checkbox" id="evOld"> 含 24 小时前</label>
+      <select id="evLevel"><option value="">全部级别</option><option value="warning">警告及以上</option><option value="critical">只看严重</option></select>
+      <select id="evGroup"><option value="">全部组</option></select><button id="btnEvents">刷新事件</button></div>
+    <div class="tbl-wrap"><table><thead><tr><th>时间</th><th>级别</th><th>组</th><th>节点</th><th>事件</th><th>详情</th></tr></thead><tbody id="events"></tbody></table></div>
+  </div>
+</main>
+
+<dialog id="dlgGroup"><form method="dialog">
+  <div class="dlg-h" id="dlgGroupTitle">新建负载均衡组</div>
+  <div class="dlg-b">
+    <label>展示名称</label><input name="gname" required maxlength="64" placeholder="如 🇯🇵日本 01（订阅里的节点名）">
+    <label>启用</label><label><input type="checkbox" name="enabled" checked> 下发到订阅</label>
+    <label>排序 sort</label><input name="sort" type="number" step="0.1" placeholder="与节点 sort 同口径，可用小数插空">
+    <label>分配间隔</label><span><input name="interval_min" type="number" min="1" max="43200" value="60" style="width:100px"> 分钟 <span class="muted">（只限制重新随机的频率，默认 60）</span></span>
+    <label>分配策略</label><select name="strategy"></select>
+    <label>健康判定</label><select name="health_mode"></select>
+    <label>域名入口解析</label><span><input name="resolve_server_id" type="number" min="1" placeholder="来源节点 ID，留空=不解析" style="width:190px"> 每 <input name="resolve_min" type="number" min="5" max="1440" value="15" style="width:70px"> 分钟</span>
+    <div class="full muted" style="margin-top:-4px">入口是域名的节点填它的 ID：面板服务器按间隔解析 A 记录（只取 IPv4），每个 IP 自动成为一个成员，订阅里下发 IP；IP 从 DNS 消失自动停用、回来自动启用；该节点自身作为隐藏成员保留（仍负责监听与计费）。</div>
+    <label>备注</label><input name="remark" maxlength="255">
+    <div class="full" id="dlgGroupMembersWrap">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><b>成员</b><input class="pickerQ" placeholder="搜索名称 / IP / #id" style="flex:1"></div>
+      <div class="picker"></div>
+      <div class="muted" style="margin-top:6px">组内成员倍率（含分时倍率）必须一致；一台节点只能属于一个组。成员需保持「显示」开启才参与分配。</div>
+    </div>
+  </div>
+  <div class="dlg-f"><button value="cancel" formnovalidate>取消</button><button value="ok" class="primary" id="dlgGroupOk">保存</button></div>
+</form></dialog>
+
+<dialog id="dlgMembers"><form method="dialog">
+  <div class="dlg-h">添加成员</div>
+  <div class="dlg-b">
+    <label>初始状态</label><select name="status"><option value="active">活跃（立即接收新分配）</option><option value="draining">维护中（先不接分配）</option><option value="disabled">停用</option></select>
+    <div class="full">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><input class="pickerQ" placeholder="搜索名称 / IP / #id" style="flex:1"></div>
+      <div class="picker"></div>
+      <div class="muted" style="margin-top:6px">新成员只承接之后的新分配和到期重抽，不会打乱现有用户的有效分配。</div>
+    </div>
+  </div>
+  <div class="dlg-f"><button value="cancel" formnovalidate>取消</button><button value="ok" class="primary">添加</button></div>
+</form></dialog>
+
+<dialog id="dlgHealth"><form method="dialog">
+  <div class="dlg-h">健康覆盖</div>
+  <div class="dlg-b">
+    <label>成员</label><span id="dlgHealthWho"></span>
+    <label>覆盖</label><select name="override"><option value="auto">自动（跟随心跳/探测）</option><option value="down">强制不可用（立即让其上的分配失效）</option><option value="up">强制可用（无视自动信号）</option></select>
+    <label>备注</label><input name="note" maxlength="255" placeholder="如：线路故障 / 机器维护">
+  </div>
+  <div class="dlg-f"><button value="cancel" formnovalidate>取消</button><button value="ok" class="primary">保存</button></div>
+</form></dialog>
+
+<div id="toast"></div>
+
+<script>
+(() => {
+  const SECURE = '__SECURE_PATH__';
+  const API = `/api/v2/${SECURE}/sub-lb`;
+  const $ = (s, el = document) => el.querySelector(s);
+  const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const STATE_CLASS = {ok:'st-ok', degraded:'st-warn', draining_only:'st-warn', failopen:'st-bad', empty:'st-bad', disabled:''};
+  const BLOCKED = {server_unavailable:'服务器不可下发（已删/隐藏/超流量上限）', parent_unavailable:'承载节点不可下发（隐藏/超流量上限/已删）', parent_disabled:'承载节点已禁用', server_disabled:'节点已禁用(enabled=0)', member_disabled:'成员已停用', override_down:'强制不可用'};
+  const REASON = {heartbeat_lost:'心跳丢失', probe_failed:'探测失败', unhealthy:'不健康'};
+  let META = null, SERVERS = null, GROUPS = [];
+  const OPEN = new Set(); // 展开的组（默认全部折叠；重新渲染时保持）
+  $('#backLink').href = '/' + SECURE;
+
+  function token() {
+    try { const raw = localStorage.getItem('XBOARD_ACCESS_TOKEN'); if (!raw) return null;
+      const o = JSON.parse(raw); if (o.expire && o.expire < Date.now()) return null; return o.value || null; } catch { return null; }
+  }
+  function toast(msg, bad) { const t = $('#toast'); t.textContent = msg; t.classList.toggle('err', !!bad); t.style.display = 'block'; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', bad ? 6000 : 2500); }
+  async function api(path, body) {
+    const tk = token();
+    if (!tk) { needLogin(); throw new Error('未登录'); }
+    const res = await fetch(API + path, { method: body ? 'POST' : 'GET', headers: { 'Authorization': tk, 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+    let json = null; try { json = await res.json(); } catch {}
+    if (res.status === 403 && (!json || json.message === 'Unauthorized')) { needLogin(); throw new Error('登录失效'); }
+    if (!res.ok || (json && json.status === 'fail')) {
+      const msg = (json && (json.message || (json.errors && Object.values(json.errors).flat().join('；')))) || ('HTTP ' + res.status);
+      throw new Error(msg);
+    }
+    return json ? json.data : null;
+  }
+  function needLogin() { const b = $('#authBox'); b.style.display = 'block'; b.innerHTML = `未检测到管理员登录态。请先在同一域名打开 <a href="/${esc(SECURE)}">后台</a> 登录，再回到本页刷新。`; }
+  function ago(ts, now) { if (!ts) return '从未'; const s = Math.max(0, now - ts); return s < 60 ? s + ' 秒前' : s < 3600 ? Math.floor(s/60) + ' 分钟前' : s < 86400 ? Math.floor(s/3600) + ' 小时前' : Math.floor(s/86400) + ' 天前'; }
+  function fmtTime(ts) { if (!ts) return '—'; const d = new Date(ts * 1000); const p = n => String(n).padStart(2,'0'); return `${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; }
+  function sigChip(v, label) { const cls = v === 'up' ? 'st-ok' : v === 'down' ? 'st-bad' : ''; const txt = {up:'正常',down:'异常',unknown:'未探测',stale:'结果过期'}[v] || v; return `<span class="chip ${cls}">${label}${esc(txt)}</span>`; }
+
+  async function load() {
+    try {
+      META = await api('/fetch');
+    } catch (e) { toast(e.message, true); return; }
+    if (!META.installed) { $('#groups').innerHTML = '<div class="notice">负载均衡数据表未安装：请在「插件管理」里重新安装本插件。</div>'; return; }
+    $('#authBox').style.display = 'none';
+    const pr = META.probe_rules; document.querySelectorAll('.r-hb').forEach(e => e.textContent = pr.heartbeat_window); document.querySelectorAll('.r-down').forEach(e => e.textContent = pr.down_after); document.querySelectorAll('.r-up').forEach(e => e.textContent = pr.up_after); document.querySelectorAll('.r-stale').forEach(e => e.textContent = pr.stale_after);
+    const lc = META.last_check_at; const chip = $('#checkChip');
+    chip.textContent = '巡检：' + (lc ? ago(lc, META.now) : '从未运行');
+    chip.className = 'chip ' + (!lc || META.now - lc > 300 ? 'st-bad' : 'st-ok');
+    GROUPS = META.groups;
+    renderGroups();
+    const sel = $('#evGroup'); const cur = sel.value;
+    sel.innerHTML = '<option value="">全部组</option>' + GROUPS.map(g => `<option value="${g.id}">${esc(g.name)}</option>`).join('');
+    sel.value = cur;
+    loadEvents();
+  }
+
+  function renderGroups() {
+    const now = META.now;
+    if (!GROUPS.length) { $('#groups').innerHTML = '<div class="notice">还没有负载均衡组。点右上角「新建组」。</div>'; return; }
+    $('#groups').innerHTML = GROUPS.map(g => {
+      const strat = (META.strategies.find(s => s.key === g.strategy) || {label: g.strategy}).label;
+      const sm = g.summary;
+      const reasons = Object.entries(g.reasons_1h || {}).map(([k, v]) => `${esc(k)}×${v}`).join('，') || '无';
+      const rows = g.members.map(m => {
+        const s = m.server, ev = m.eval;
+        const endpoint = s ? `${esc(s.type)} ${esc(s.host)}:${esc(s.port)}` : '<span class="st-bad chip">服务器已删除</span>';
+        let evalTxt = '—';
+        if (ev) {
+          if (ev.blocked) evalTxt = `<span class="chip st-bad">${esc(BLOCKED[ev.blocked] || ev.blocked)}</span>`;
+          else if (ev.healthy) evalTxt = ev.candidate ? '<span class="chip st-ok">候选</span>' : '<span class="chip">健康（非当前层）</span>';
+          else evalTxt = `<span class="chip st-warn">${esc(REASON[ev.health_reason] || ev.health_reason)}</span>` + (ev.candidate ? ' <span class="chip st-bad">fail-open 候选</span>' : '');
+        }
+        const sig = ev && ev.signals ? sigChip(ev.signals.heartbeat, '心跳') + ' ' + sigChip(ev.signals.probe, '探测') : '';
+        const hbAgo = s ? `<div class="muted">心跳 ${ago(s.last_check_at, now)}</div>` : '';
+        const probe = m.probe_state ? `<div class="muted">探测 ${esc(m.probe_detail || '')} · ${ago(m.probe_checked_at, now)}${m.probe_fail_streak ? ' · 连败' + m.probe_fail_streak : ''}</div>` : (s && !s.probeable ? '<div class="muted">UDP/端口段，不做 TCP 探测</div>' : '');
+        const ovr = m.health_override ? `<span class="chip ${m.health_override === 'down' ? 'st-bad' : 'st-ok'}">强制${m.health_override === 'down' ? '不可用' : '可用'}</span><div class="muted">${esc(m.health_note || '')} ${esc(m.health_override_by || '')} ${ago(m.health_override_at, now)}</div>` : '<span class="muted">自动</span>';
+        const warnPerm = s && (!s.group_ids || !s.group_ids.length) ? ' <span class="chip st-warn">无权限组</span>' : '';
+        const hidden = s && !s.show ? ' <span class="chip st-warn">show=0</span>' : '';
+        const managed = m.managed === 'dns' ? ' <span class="chip">DNS 自动</span>' : m.managed === 'dns-source' ? ' <span class="chip">解析来源</span>' : '';
+        return `<tr>
+          <td>#${m.server_id} ${s ? esc(s.name) : ''}${managed}${warnPerm}${hidden}<div class="muted">${endpoint}</div></td>
+          <td>${s ? esc(s.rate) + 'x' : '—'}</td>
+          <td><select data-act="status" data-id="${m.id}">${Object.entries(META.statuses).map(([k, v]) => `<option value="${k}" ${k === m.status ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select>
+              <div><label class="muted"><input type="checkbox" data-act="standalone" data-id="${m.id}" ${m.standalone ? 'checked' : ''}> 独立显示</label></div></td>
+          <td>${sig}${hbAgo}${probe}</td>
+          <td>${ovr}<div><button data-act="health" data-id="${m.id}">设置</button></div></td>
+          <td>${evalTxt}</td>
+          <td>${m.assigned}</td>
+          <td><button data-act="resetMember" data-gid="${g.id}" data-sid="${m.server_id}" title="该成员上的用户下次更新订阅时重新随机">重新分配</button>
+              <button class="danger" data-act="dropMember" data-id="${m.id}">移出</button></td>
+        </tr>`;
+      }).join('');
+      return `<div class="card foldable${OPEN.has(g.id) ? ' open' : ''}" data-gid="${g.id}">
+        <div class="card-h fold-h">
+          <span class="fold">▶</span>
+          <span class="name">${esc(g.name)}</span>
+          <span class="chip ${STATE_CLASS[g.state] || ''}">${esc(META.states[g.state] || g.state)}</span>
+          <label class="muted"><input type="checkbox" data-act="toggle" data-id="${g.id}" ${g.enabled ? 'checked' : ''}> 启用</label>
+          <span class="brief muted">健康 ${sm.active_healthy}/${sm.active} · ${g.members.length} 个成员 · 分配 ${g.assigned_total} 人</span>
+          ${g.warnings.length ? `<span class="brief chip st-warn">${g.warnings.length} 条提示</span>` : ''}
+          <span class="spacer"></span>
+          <span class="acts">
+            <button data-act="edit" data-id="${g.id}">编辑</button>
+            <button data-act="addMembers" data-id="${g.id}">添加成员</button>
+            <button data-act="resetGroup" data-id="${g.id}" title="删除本组所有分配，用户下次更新订阅时重新随机">全部重新分配</button>
+            <button class="danger" data-act="dropGroup" data-id="${g.id}">删除组</button>
+          </span>
+        </div>
+        ${g.warnings.length ? `<ul class="warns">${g.warnings.map(w => `<li>${esc(w)}</li>`).join('')}</ul>` : ''}
+        <div class="card-b kv">
+          <span>组 id <b>${g.id}</b>（订阅条目 id ${g.entry_id}）</span><span>sort <b>${g.sort}</b></span>
+          <span>间隔 <b>${Math.round(g.interval_seconds / 60)}</b> 分钟</span><span>策略 <b>${esc(strat)}</b></span>
+          <span>健康判定 <b>${esc(META.health_modes[g.health_mode] || g.health_mode)}</b></span>
+          <span>健康活跃 <b>${sm.active_healthy}/${sm.active}</b> · 维护中 ${sm.draining_healthy}/${sm.draining} · 不可用 ${sm.blocked}</span>
+          <span>有效期内分配 <b>${g.assigned_total}</b> 人</span><span>近 1 小时（重新）分配：${reasons}</span>
+          <span class="muted">巡检结论 ${esc(g.stored_state || '—')} · ${ago(g.checked_at, now)}</span>
+          ${g.resolve_server_id ? `<span>域名解析 <b>#${g.resolve_server_id} ${esc((g.resolve_detail || {}).host || '')}</b> · 每 ${Math.round(g.resolve_interval / 60)} 分钟 · 上次 ${ago(g.resolved_at, now)} · IP ${esc(((g.resolve_detail || {}).ips || []).join(', ') || '—')}</span>` : ''}
+          ${g.remark ? `<span class="muted">备注：${esc(g.remark)}</span>` : ''}
+        </div>
+        <div class="tbl-wrap"><table><thead><tr><th>成员</th><th>倍率</th><th>状态</th><th>自动信号</th><th>健康覆盖</th><th>判定</th><th>分配人数</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="8" class="muted">还没有成员</td></tr>'}</tbody></table></div>
+      </div>`;
+    }).join('');
+    syncFoldAll();
+  }
+  function syncFoldAll() { $('#btnFoldAll').textContent = GROUPS.length && GROUPS.every(g => OPEN.has(g.id)) ? '全部折叠' : '全部展开'; }
+
+  async function loadEvents() {
+    try {
+      const gid = $('#evGroup').value;
+      const all = await api('/events?limit=500' + (gid ? '&group_id=' + gid : ''));
+      // 默认只看近 24 小时（超过的勾「含 24 小时前」才显示）；级别筛选
+      const since = (META ? META.now : Date.now() / 1000) - 86400, lv = $('#evLevel').value;
+      const recent = all.filter(r => r.created_at >= since);
+      const rows = ($('#evOld').checked ? all : recent).filter(r => !lv || r.level === 'critical' || (lv === 'warning' && r.level === 'warning'));
+      const cnt = l => recent.filter(r => r.level === l).length;
+      // 接口最多取 500 条：24 小时内超过 500 条时如实标出只覆盖了最近多久
+      const cut = all.length >= 500 && recent.length === all.length;
+      const span = cut ? Math.max(1, Math.round(((META ? META.now : Date.now() / 1000) - all[all.length - 1].created_at) / 360) / 10) : 0;
+      $('#evBrief').textContent = (cut ? `最近 500 条（约 ${span} 小时，24 小时内更多）` : `近 24 小时 ${recent.length} 条`) + ` · 严重 ${cnt('critical')} · 警告 ${cnt('warning')}` + (rows.length !== recent.length ? ` · 显示 ${rows.length} 条` : '');
+      const names = Object.fromEntries(GROUPS.map(g => [g.id, g.name]));
+      $('#events').innerHTML = rows.map(r => `<tr><td>${fmtTime(r.created_at)}</td><td class="ev-level-${esc(r.level)}">${esc(r.level)}</td><td>${esc(names[r.group_id] || r.group_id || '')}</td><td>${r.server_id ? '#' + r.server_id : ''}</td><td>${esc(r.type)}</td><td class="wrap">${esc(r.detail || '')}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">暂无</td></tr>';
+    } catch (e) { toast(e.message, true); }
+  }
+
+  async function servers() { if (!SERVERS) SERVERS = await api('/servers'); return SERVERS; }
+  function renderPicker(dlg, list, excludeGid) {
+    const q = $('.pickerQ', dlg).value.trim().toLowerCase();
+    const names = Object.fromEntries(GROUPS.map(g => [g.id, g.name]));
+    // 可勾选的（不属于任何组）排在前面，已在别的组/本组的排后面
+    const rank = s => s.lb_group_id ? 1 : 0;
+    $('.picker', dlg).innerHTML = list.filter(s => !q || `#${s.id} ${s.name} ${s.host}`.toLowerCase().includes(q)).sort((a, b) => rank(a) - rank(b)).map(s => {
+      const taken = s.lb_group_id && s.lb_group_id !== excludeGid;
+      const checked = dlg._picked.has(s.id);
+      return `<label class="${taken ? 'taken' : ''}"><input type="checkbox" value="${s.id}" ${checked ? 'checked' : ''} ${taken || (s.lb_group_id && s.lb_group_id === excludeGid) ? 'disabled' : ''}>
+        <span>#${s.id} ${esc(s.name)} <span class="muted">${esc(s.type)} ${esc(s.host)}:${esc(s.port)} · ${s.rate}x${s.rate_time_enable ? '(分时)' : ''}${s.show ? '' : ' · show=0'}${s.group_ids.length ? '' : ' · 无权限组'}${s.lb_group_id ? ' · 已在「' + esc(names[s.lb_group_id] || s.lb_group_id) + '」' : ''}</span></span></label>`;
+    }).join('');
+  }
+  function bindPicker(dlg, list, excludeGid) {
+    dlg._picked = new Set();
+    const qi = $('.pickerQ', dlg); qi.value = '';
+    qi.oninput = () => renderPicker(dlg, list, excludeGid);
+    $('.picker', dlg).onchange = e => { if (e.target.type === 'checkbox') { const id = +e.target.value; e.target.checked ? dlg._picked.add(id) : dlg._picked.delete(id); } };
+    renderPicker(dlg, list, excludeGid);
+  }
+  function openDialog(dlg) { return new Promise(resolve => { dlg.onclose = () => resolve(dlg.returnValue === 'ok'); dlg.returnValue = ''; dlg.showModal(); }); }
+
+  async function editGroup(g) {
+    const dlg = $('#dlgGroup'), f = $('form', dlg);
+    $('#dlgGroupTitle').textContent = g ? `编辑「${g.name}」` : '新建负载均衡组';
+    f.strategy.innerHTML = META.strategies.map(s => `<option value="${esc(s.key)}">${esc(s.label)}</option>`).join('');
+    f.health_mode.innerHTML = Object.entries(META.health_modes).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('');
+    f.gname.value = g ? g.name : ''; f.enabled.checked = g ? g.enabled : true; f.sort.value = g ? g.sort : '';
+    f.interval_min.value = g ? Math.round(g.interval_seconds / 60) : 60; f.strategy.value = g ? g.strategy : 'random';
+    f.health_mode.value = g ? g.health_mode : 'heartbeat'; f.remark.value = g ? (g.remark || '') : '';
+    f.resolve_server_id.value = g && g.resolve_server_id ? g.resolve_server_id : ''; f.resolve_min.value = g ? Math.round((g.resolve_interval || 900) / 60) : 15;
+    $('#dlgGroupMembersWrap').style.display = g ? 'none' : '';
+    if (!g) { try { bindPicker(dlg, await servers(), null); } catch (e) { toast(e.message, true); return; } }
+    if (!(await openDialog(dlg))) return;
+    const picked = g ? [] : [...dlg._picked];
+    let sort = f.sort.value;
+    if (!g && sort === '' && picked.length) { const srv = (await servers()).filter(s => picked.includes(s.id)); sort = Math.min(...srv.map(s => +s.sort || 0)); }
+    if (g && g.enabled && !f.enabled.checked && !confirm('停用后：组不下发，成员也不会单独下发（整组下线）。确定停用？')) return;
+    try {
+      const r = await api('/group/save', { id: g ? g.id : null, name: f.gname.value, enabled: f.enabled.checked, sort: sort === '' ? 0 : +sort, interval_seconds: Math.round(+f.interval_min.value * 60), strategy: f.strategy.value, health_mode: f.health_mode.value, remark: f.remark.value || null, server_ids: picked, resolve_server_id: f.resolve_server_id.value === '' ? null : +f.resolve_server_id.value, resolve_interval: Math.round(+f.resolve_min.value * 60) });
+      const rv = r && r.resolve;
+      toast(rv ? (rv.error ? '已保存，但解析失败：' + rv.error : '已保存，已解析' + (rv.lines && rv.lines.length ? '：' + rv.lines.join('；') : '（无变化）')) : '已保存', rv && rv.error); SERVERS = null; load();
+    } catch (e) { toast(e.message, true); }
+  }
+
+  async function addMembers(g) {
+    const dlg = $('#dlgMembers'), f = $('form', dlg);
+    try { bindPicker(dlg, await servers(), g.id); } catch (e) { toast(e.message, true); return; }
+    if (!(await openDialog(dlg))) return;
+    if (!dlg._picked.size) return;
+    try { await api('/member/add', { group_id: g.id, server_ids: [...dlg._picked], status: f.status.value }); toast('已添加'); SERVERS = null; load(); }
+    catch (e) { toast(e.message, true); }
+  }
+
+  async function health(m) {
+    const dlg = $('#dlgHealth'), f = $('form', dlg);
+    $('#dlgHealthWho').textContent = `#${m.server_id} ${m.server ? m.server.name : ''}`;
+    f.override.value = m.health_override || 'auto'; f.note.value = m.health_note || '';
+    if (!(await openDialog(dlg))) return;
+    try { await api('/member/health', { id: m.id, override: f.override.value, note: f.note.value || null }); toast('已更新'); load(); }
+    catch (e) { toast(e.message, true); }
+  }
+
+  const findGroup = id => GROUPS.find(g => g.id === +id);
+  const findMember = id => { for (const g of GROUPS) { const m = g.members.find(x => x.id === +id); if (m) return m; } };
+
+  $('#groups').addEventListener('click', async e => {
+    const h = e.target.closest('.fold-h');
+    if (h && !e.target.closest('button,input,select,label,a')) {
+      const card = h.parentElement, id = +card.dataset.gid;
+      card.classList.toggle('open') ? OPEN.add(id) : OPEN.delete(id);
+      return syncFoldAll();
+    }
+    const b = e.target.closest('button[data-act]'); if (!b) return;
+    const act = b.dataset.act;
+    try {
+      if (act === 'edit') return editGroup(findGroup(b.dataset.id));
+      if (act === 'addMembers') return addMembers(findGroup(b.dataset.id));
+      if (act === 'health') return health(findMember(b.dataset.id));
+      if (act === 'resetGroup') { if (!confirm('删除本组所有用户的分配？用户下次更新订阅时会重新随机。')) return; const r = await api('/reset', { group_id: +b.dataset.id }); toast(`已清除 ${r.deleted} 条分配`); }
+      if (act === 'resetMember') { if (!confirm(`把成员 #${b.dataset.sid} 上的用户全部重新分配？（下次更新订阅生效）`)) return; const r = await api('/reset', { group_id: +b.dataset.gid, server_id: +b.dataset.sid }); toast(`已清除 ${r.deleted} 条分配`); }
+      if (act === 'dropMember') { if (!confirm('移出该成员？其上的用户下次更新订阅时改分配；该节点恢复为普通节点（按自身 show 独立下发）。')) return; await api('/member/drop', { id: +b.dataset.id }); toast('已移出'); SERVERS = null; }
+      if (act === 'dropGroup') { const g = findGroup(b.dataset.id); if (!confirm(`删除组「${g.name}」？组内成员恢复为普通节点（按各自 show 独立下发）；为负载均衡建的入口子节点会自动隐藏(show=0)；分配记录一并删除。`)) return; await api('/group/drop', { id: g.id }); toast('已删除'); SERVERS = null; }
+      load();
+    } catch (err) { toast(err.message, true); }
+  });
+  $('#groups').addEventListener('change', async e => {
+    const el = e.target, act = el.dataset.act; if (!act) return;
+    try {
+      if (act === 'toggle') {
+        if (!el.checked && !confirm('停用后：组不下发，成员也不会单独下发（整组下线）。确定停用？')) { el.checked = true; return; }
+        await api('/group/toggle', { id: +el.dataset.id, enabled: el.checked });
+      }
+      if (act === 'status') {
+        if (el.value === 'disabled' && !confirm('停用成员：其上的用户下次更新订阅时立即改分配。确定？')) { load(); return; }
+        await api('/member/update', { id: +el.dataset.id, status: el.value });
+      }
+      if (act === 'standalone') {
+        if (el.checked && !confirm('勾选后该成员会同时以自己的名字单独下发（用户会看到两份）。确定？')) { el.checked = false; return; }
+        await api('/member/update', { id: +el.dataset.id, standalone: el.checked });
+      }
+      toast('已更新'); load();
+    } catch (err) { toast(err.message, true); load(); }
+  });
+
+  $('#btnUser').onclick = async () => {
+    const q = $('#userQ').value.trim(); if (!q) return;
+    try {
+      const r = await api('/user?q=' + encodeURIComponent(q));
+      const names = Object.fromEntries(GROUPS.map(g => [g.id, g]));
+      const rows = GROUPS.map(g => {
+        const a = r.assignments.find(x => +x.group_id === g.id); const p = r.preview[g.id];
+        const exp = a ? (+a.assigned_at + g.interval_seconds) : null;
+        return `<tr><td>${esc(g.name)}</td>
+          <td>${a ? `#${a.server_id} · ${fmtTime(+a.assigned_at)} · ${esc(a.reason || '')}${a.previous_server_id ? ' · 原 #' + a.previous_server_id : ''}<div class="muted">${META.now >= exp ? '已到期，下次更新订阅重抽' : '到期 ' + fmtTime(exp)}</div>` : '<span class="muted">无记录</span>'}</td>
+          <td>${p ? `#${p.server_id} ${esc(p.type)} ${esc(p.host)}:${esc(p.port)} · ${p.rate}x <span class="chip">${esc(p.reason)}</span>` : '<span class="muted">不下发（无权限/无可用成员/已停用）</span>'}</td></tr>`;
+      }).join('');
+      $('#userResult').innerHTML = `<div class="kv" style="margin-bottom:8px"><span>用户 #${r.user.id} ${esc(r.user.email)}</span><span>权限组 ${esc(r.user.group_id)}</span><span>套餐 ${esc(r.user.plan_id)}</span><span>${r.user.available ? '订阅可用' : '<span class="chip st-bad">订阅不可用</span>'}</span></div>
+        <div class="tbl-wrap"><table><thead><tr><th>组</th><th>分配记录</th><th>现在更新订阅会拿到（preview=尚无有效分配，展示候选首位）</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    } catch (e) { toast(e.message, true); }
+  };
+  $('#userQ').addEventListener('keydown', e => { if (e.key === 'Enter') $('#btnUser').click(); });
+  $('#btnFoldAll').onclick = () => {
+    const open = !GROUPS.every(g => OPEN.has(g.id));
+    GROUPS.forEach(g => open ? OPEN.add(g.id) : OPEN.delete(g.id));
+    document.querySelectorAll('#groups .card[data-gid]').forEach(c => c.classList.toggle('open', open));
+    syncFoldAll();
+  };
+  $('#btnReload').onclick = load;
+  $('#btnNew').onclick = () => editGroup(null);
+  $('#btnEvents').onclick = loadEvents;
+  $('#evGroup').onchange = loadEvents;
+  $('#evLevel').onchange = loadEvents;
+  $('#evOld').onchange = loadEvents;
+  $('#evCard').addEventListener('click', e => {
+    if (!e.target.closest('.fold-h') || e.target.closest('button,input,select,label,a')) return;
+    $('#evCard').classList.toggle('open');
+  });
+  if (!token()) needLogin(); else load();
+})();
+</script>
+</body>
+</html>
