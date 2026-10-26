@@ -6,7 +6,7 @@ namespace Plugin\SubscribeLb\Services;
  * 候选成员筛选：给定一个组、它的成员行、以及「当前视角下可用的服务器数组」，算出每个成员的资格和分层候选。
  *
  * 视角：
-^ *  - 订阅：availableById = 该用户 ServerService::getAvailableServers() 的结果（已含权限组、show=1、
+ *  - 订阅：availableById = 该用户 ServerService::getAvailableServers() 的结果（已含权限组、show=1、
  *    节点流量上限过滤，以及按该用户派生的密码），所以「失去用户权限」天然体现为 server_unavailable
  *  - 后台/巡检：availableById = 全部成员服务器（只过滤 show 与流量上限，不看权限组）
  *
