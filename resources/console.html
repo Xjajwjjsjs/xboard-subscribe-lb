@@ -120,6 +120,7 @@ details summary{cursor:pointer;font-size:14px}
     <ul>
       <li>每组在订阅里只出现一个节点，名称 = 组的展示名称；连接参数（地址/端口/协议/认证/传输）、倍率、流量计费都来自实际分到的成员。</li>
       <li>按「用户 + 组」记录分配：首次随机；间隔内复用（不延后到期）；到期后下一次更新订阅时重新随机，允许抽中原节点。同一用户不同客户端/模板一致。</li>
+      <li><b>权重</b>：默认每个成员为 1；设置 1:2 时，合格候选的新分配概率约为 1/3、2/3。修改后在新分配或到期重抽时生效，实际流量会因用户用量不同而有偏差。同一机器有多个入口成员时，各成员权重相加；TCP/UDP 等不同组分别设置。</li>
       <li>成员状态：<b>活跃</b>接收新分配；<b>维护中</b>保留已有分配、不接新分配（没有健康的活跃成员时临时承接）；<b>停用</b>立即失效。成员不会再以自己的名字单独下发（除非勾选「独立显示」）。</li>
       <li>健康来源：面板心跳（≤<span class="r-hb"></span> 秒）、TCP 探测（连续 <span class="r-down"></span> 轮失败判不可用，连续 <span class="r-up"></span> 轮成功才恢复，巡检停摆 <span class="r-stale"></span> 秒后探测结果作废）、人工/外部强制。自动信号全部判不可用时视为探测侧故障，暂时忽略自动信号（fail-open），只尊重强制下线。</li>
       <li>不可用 / 停用 / 删除 / 失去用户权限的成员：用户<b>下次更新订阅</b>时提前改分配到其他合格成员。恢复后只承接新分配，不把已迁走的用户拉回。新增成员只承接后续分配，不打乱现有有效分配。</li>
@@ -181,6 +182,16 @@ details summary{cursor:pointer;font-size:14px}
     <label>成员</label><span id="dlgHealthWho"></span>
     <label>覆盖</label><select name="override"><option value="auto">自动（跟随心跳/探测）</option><option value="down">强制不可用（立即让其上的分配失效）</option><option value="up">强制可用（无视自动信号）</option></select>
     <label>备注</label><input name="note" maxlength="255" placeholder="如：线路故障 / 机器维护">
+  </div>
+  <div class="dlg-f"><button value="cancel" formnovalidate>取消</button><button value="ok" class="primary">保存</button></div>
+</form></dialog>
+
+<dialog id="dlgWeight"><form method="dialog">
+  <div class="dlg-h">成员权重</div>
+  <div class="dlg-b">
+    <label>成员</label><span id="dlgWeightWho"></span>
+    <label>权重</label><input name="weight" type="number" min="1" max="10000" step="1" required>
+    <div class="full muted">默认 1。额度比例为 1:2 时，可把对应成员设为 1、2。新分配及到期重抽时生效，实际流量比例会有偏差；停用成员请使用“状态”。</div>
   </div>
   <div class="dlg-f"><button value="cancel" formnovalidate>取消</button><button value="ok" class="primary">保存</button></div>
 </form></dialog>
@@ -266,6 +277,7 @@ details summary{cursor:pointer;font-size:14px}
         return `<tr>
           <td>#${m.server_id} ${s ? esc(s.name) : ''}${managed}${warnPerm}${hidden}<div class="muted">${endpoint}</div></td>
           <td>${s ? esc(s.rate) + 'x' : '—'}</td>
+          <td><button data-act="weight" data-id="${m.id}" title="修改成员权重">${esc(m.weight ?? 1)}</button></td>
           <td><select data-act="status" data-id="${m.id}">${Object.entries(META.statuses).map(([k, v]) => `<option value="${k}" ${k === m.status ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select>
               <div><label class="muted"><input type="checkbox" data-act="standalone" data-id="${m.id}" ${m.standalone ? 'checked' : ''}> 独立显示</label></div></td>
           <td>${sig}${hbAgo}${probe}</td>
@@ -303,7 +315,7 @@ details summary{cursor:pointer;font-size:14px}
           ${g.resolve_server_id ? `<span>域名解析 <b>#${g.resolve_server_id} ${esc((g.resolve_detail || {}).host || '')}</b> · 每 ${Math.round(g.resolve_interval / 60)} 分钟 · 上次 ${ago(g.resolved_at, now)} · IP ${esc(((g.resolve_detail || {}).ips || []).join(', ') || '—')}</span>` : ''}
           ${g.remark ? `<span class="muted">备注：${esc(g.remark)}</span>` : ''}
         </div>
-        <div class="tbl-wrap"><table><thead><tr><th>成员</th><th>倍率</th><th>状态</th><th>自动信号</th><th>健康覆盖</th><th>判定</th><th>分配人数</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="8" class="muted">还没有成员</td></tr>'}</tbody></table></div>
+        <div class="tbl-wrap"><table><thead><tr><th>成员</th><th>倍率</th><th>权重</th><th>状态</th><th>自动信号</th><th>健康覆盖</th><th>判定</th><th>分配人数</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="9" class="muted">还没有成员</td></tr>'}</tbody></table></div>
       </div>`;
     }).join('');
     syncFoldAll();
@@ -391,6 +403,17 @@ details summary{cursor:pointer;font-size:14px}
     catch (e) { toast(e.message, true); }
   }
 
+  async function editWeight(m) {
+    const dlg = $('#dlgWeight'), f = $('form', dlg);
+    $('#dlgWeightWho').textContent = `#${m.server_id} ${m.server ? m.server.name : ''}`;
+    f.weight.value = m.weight ?? 1;
+    if (!(await openDialog(dlg))) return;
+    const weight = Number(f.weight.value);
+    if (!Number.isInteger(weight) || weight < 1 || weight > 10000) { toast('权重须为 1–10000 的整数', true); return; }
+    try { await api('/member/update', { id: m.id, weight }); toast('权重已保存，新分配及到期重抽时生效'); load(); }
+    catch (e) { toast(e.message, true); }
+  }
+
   const findGroup = id => GROUPS.find(g => g.id === +id);
   const findMember = id => { for (const g of GROUPS) { const m = g.members.find(x => x.id === +id); if (m) return m; } };
 
@@ -407,6 +430,7 @@ details summary{cursor:pointer;font-size:14px}
       if (act === 'edit') return editGroup(findGroup(b.dataset.id));
       if (act === 'addMembers') return addMembers(findGroup(b.dataset.id));
       if (act === 'health') return health(findMember(b.dataset.id));
+      if (act === 'weight') return editWeight(findMember(b.dataset.id));
       if (act === 'resetGroup') { if (!confirm('删除本组所有用户的分配？用户下次更新订阅时会重新随机。')) return; const r = await api('/reset', { group_id: +b.dataset.id }); toast(`已清除 ${r.deleted} 条分配`); }
       if (act === 'resetMember') { if (!confirm(`把成员 #${b.dataset.sid} 上的用户全部重新分配？（下次更新订阅生效）`)) return; const r = await api('/reset', { group_id: +b.dataset.gid, server_id: +b.dataset.sid }); toast(`已清除 ${r.deleted} 条分配`); }
       if (act === 'dropMember') { if (!confirm('移出该成员？其上的用户下次更新订阅时改分配；该节点恢复为普通节点（按自身 show 独立下发）。')) return; await api('/member/drop', { id: +b.dataset.id }); toast('已移出'); SERVERS = null; }

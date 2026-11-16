@@ -285,7 +285,7 @@ final class LoadBalancer
         }
 
         if ($assignments === null) {
-            $sid = $this->stableChoice($pool->candidates, (int) $user->id, $gid, $interval, $now);
+            $sid = $this->stableChoice($pool->candidates, (int) $user->id, $gid, $interval, $now, $pool->entries);
             return $this->decorate($group, $pool->server($sid), 'degraded', null);
         }
 
@@ -313,7 +313,7 @@ final class LoadBalancer
                     : $this->store->replace($current, $sid, $now, $reason);
             } catch (\Throwable $e) {
                 $this->noteStoreFailure($e, 'write', $gid);
-                $sid = $this->stableChoice($pool->candidates, (int) $user->id, $gid, $interval, $now);
+                $sid = $this->stableChoice($pool->candidates, (int) $user->id, $gid, $interval, $now, $pool->entries);
                 return $this->decorate($group, $pool->server($sid), 'degraded', null);
             }
 
@@ -334,7 +334,7 @@ final class LoadBalancer
                 $current = $this->store->find((int) $user->id, $gid);
             } catch (\Throwable $e) {
                 $this->noteStoreFailure($e, 'read', $gid);
-                $sid = $this->stableChoice($pool->candidates, (int) $user->id, $gid, $interval, $now);
+                $sid = $this->stableChoice($pool->candidates, (int) $user->id, $gid, $interval, $now, $pool->entries);
                 return $this->decorate($group, $pool->server($sid), 'degraded', null);
             }
             if ($current === null) {
@@ -351,20 +351,21 @@ final class LoadBalancer
         }
 
         // 极端竞争下 3 次都没写进去：本次用稳定哈希结果，不落库
-        $sid = $this->stableChoice($pool->candidates, (int) $user->id, $gid, $interval, $now);
+        $sid = $this->stableChoice($pool->candidates, (int) $user->id, $gid, $interval, $now, $pool->entries);
         return $this->decorate($group, $pool->server($sid), 'unpersisted', null);
     }
 
     /**
      * 降级选择：同一「用户+组+时间窗」在任何客户端、worker、实例上都得到同一个成员；只用本用户的数据。
      */
-    private function stableChoice(array $candidateIds, int $userId, int $gid, int $interval, int $now): int
+    private function stableChoice(array $candidateIds, int $userId, int $gid, int $interval, int $now, array $entries = []): int
     {
         $ids = array_map('intval', $candidateIds);
         sort($ids);
         $bucket = intdiv($now, max(1, $interval));
         $hash = crc32("sub-lb:{$userId}:{$gid}:{$bucket}");
-        return $ids[$hash % count($ids)];
+        $candidates = array_map(fn($id) => $entries[$id] ?? ['server_id' => $id, 'member' => []], $ids);
+        return WeightedChoice::choose($candidates, $hash);
     }
 
     private function noteStoreFailure(\Throwable $e, string $op, ?int $gid = null): void

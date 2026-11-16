@@ -2,8 +2,10 @@
 
 namespace Plugin\SubscribeLb\Services\Strategies;
 
+use Plugin\SubscribeLb\Services\WeightedChoice;
+
 /**
- * 首期策略：在候选里均匀随机，允许抽中原节点。
+ * 按成员权重随机，默认全部为 1，允许抽中原节点。
  */
 final class RandomStrategy implements AllocationStrategy
 {
@@ -14,12 +16,11 @@ final class RandomStrategy implements AllocationStrategy
 
     public static function label(): string
     {
-        return '随机（到期重抽，允许抽中原节点）';
+        return '随机（按权重，到期重抽）';
     }
 
     public function choose(array $candidates, AllocationContext $context): int
     {
-        $values = array_values($candidates);
-        return (int) $values[random_int(0, count($values) - 1)]['server_id'];
+        return WeightedChoice::choose($candidates);
     }
 }

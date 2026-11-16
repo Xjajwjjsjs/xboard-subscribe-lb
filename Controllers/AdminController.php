@@ -15,6 +15,7 @@ use Plugin\SubscribeLb\Services\MemberPool;
 use Plugin\SubscribeLb\Services\ServerSnapshot;
 use Plugin\SubscribeLb\Services\StrategyRegistry;
 use Plugin\SubscribeLb\Services\Tables;
+use Plugin\SubscribeLb\Services\WeightedChoice;
 use App\Services\ServerService;
 use App\Services\UserService;
 use Illuminate\Http\Request;
@@ -67,6 +68,7 @@ class AdminController extends Controller
                     'id' => (int) $m['id'],
                     'server_id' => $sid,
                     'status' => $m['status'],
+                    'weight' => WeightedChoice::weight($m),
                     'standalone' => (int) $m['standalone'] === 1,
                     'managed' => $m['managed'] ?? null,
                     'health_override' => $m['health_override'],
@@ -473,12 +475,19 @@ class AdminController extends Controller
             'id' => 'required|integer',
             'status' => 'nullable|in:active,draining,disabled',
             'standalone' => 'nullable|boolean',
+            'weight' => 'sometimes|required|integer|min:1|max:' . WeightedChoice::MAX_WEIGHT,
         ]);
         $member = DB::table(Tables::MEMBERS)->where('id', (int) $request->input('id'))->first();
         if (!$member) {
             return $this->fail([404, '成员不存在']);
         }
         $data = ['updated_at' => time()];
+        if ($request->has('weight')) {
+            if (!Schema::hasColumn(Tables::MEMBERS, 'weight')) {
+                return $this->fail([400, '请先完成成员权重数据库迁移']);
+            }
+            $data['weight'] = (int) $request->input('weight');
+        }
         if ($request->filled('status')) {
             $status = $request->input('status');
             if ($status !== MemberPool::STATUS_DISABLED && $member->status === MemberPool::STATUS_DISABLED) {
